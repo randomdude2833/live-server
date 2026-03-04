@@ -2,6 +2,8 @@ import socket
 import webbrowser
 import threading
 import json
+import hashlib
+import base64
 
 HOST = "127.0.0.1"
 PORT = 28333
@@ -28,7 +30,6 @@ def process_request(client, addr):
 	print(f"New connection: {addr}")
 
 	buffer = b""
-
 	while True:
 		data_bytes = client.recv(2048)
 		if not data_bytes:
@@ -50,6 +51,11 @@ def process_request(client, addr):
 		headers[key.lower()] = value.strip()
 	print(json.dumps(headers, indent=4))	
 
+	if "upgrade" in headers and headers["upgrade"].lower() == "websocket" and "sec-websocket-key" in headers:
+		send_websocket_handshake_response(client, headers["sec-websocket-key"])
+		send_frame(client)
+		return
+		
 	with open("index.html") as file:
 		html = file.read()
 	
@@ -72,13 +78,65 @@ def inject_reload_script(html):
 	reload_script = f"""
 	<script>
 		const socket = new WebSocket("ws://{HOST}:{PORT}");
-		socket.addEventListener("open", (e) => {{
-			socket.send("Hello Server");
+		socket.addEventListener("message", (e) => {{
+			console.log("Message from server: ", e.data);
 		}});
 	</script>
 	"""
 	return html.replace("</body>", reload_script + "</body>")
 
+
+def send_websocket_handshake_response(client, sec_websocket_key):
+	magic_string = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+	added = sec_websocket_key + magic_string
+	hashed = hashlib.sha1(added.encode()).digest()
+	encoded = base64.b64encode(hashed)
+
+	response = (
+		"HTTP/1.1 101 Switching Protocols\r\n"
+		"Upgrade: websocket\r\n"
+		"Connection: Upgrade\r\n"
+		f"Sec-WebSocket-Accept: {encoded.decode()}\r\n"
+		"\r\n"
+	).encode()	
+
+	client.sendall(response)
+
+def send_frame(client):
+	message = "Hello client"
+	payload = message.encode()
+	length = len(payload)
+	
+	frame = bytearray()
+	# FIN (1 bit) RSV1-3 (3 bits) opcode (4 bits)
+	first_byte = 0x81 # 10000001
+	frame.append(first_byte)
+	frame.append(length)
+	frame.extend(payload)
+	client.sendall(frame)
+
+
 		
 if __name__ == "__main__":
 	main()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
