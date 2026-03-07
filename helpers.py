@@ -15,7 +15,7 @@ def inject_reload_script(html):
     <script>
         const socket = new WebSocket("ws://127.0.0.1:28333");
 		socket.addEventListener("open", (e) => {
-			socket.send("hello from client!")
+			console.log("Connection opened successfully")
 		});
         socket.addEventListener("message", (e) => {
             console.log("Message from server: ", e.data);
